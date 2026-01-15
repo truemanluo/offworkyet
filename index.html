@@ -43,17 +43,31 @@
       </section>
 
       <footer class="text-xs text-neutral-500 text-center pt-2">
-        多巴胺仍在分泌中
+        下班倒计时中…
       </footer>
     </div>
   </div>
 
   <script>
+    /* =====================
+       基础配置
+    ====================== */
     const SUPABASE_URL = 'https://pwfglucsclutdrwnhuhz.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3ZmdsdWNzY2x1dGRyd25odWh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODMwOTAsImV4cCI6MjA4NDA1OTA5MH0.5OLlw_rzO3SaQZqDHeZ8_iBwlJgNOtQMa3OlhdpAzrM';
     const TABLE = 'offwork_status';
-    const ME_ID = 'me';
 
+    /* =====================
+       身份生成（每个浏览器唯一）
+    ====================== */
+    let USER_ID = localStorage.getItem('offwork_user_id');
+    if (!USER_ID) {
+      USER_ID = crypto.randomUUID();
+      localStorage.setItem('offwork_user_id', USER_ID);
+    }
+
+    /* =====================
+       状态定义
+    ====================== */
     const STATUSES = [
       { label: '摸鱼中', icon: '🐟' },
       { label: '忙成狗', icon: '🐕‍🦺' },
@@ -64,13 +78,15 @@
       { label: '今晚无了', icon: '💀' }
     ];
 
-
     let currentStatus = STATUSES[0];
 
+    /* =====================
+       状态按钮渲染
+    ====================== */
     const statusButtons = document.getElementById('statusButtons');
     STATUSES.forEach(s => {
       const btn = document.createElement('button');
-      btn.innerHTML = `<span class=\"text-xl\">${s.icon}</span><span class=\"text-sm\">${s.label}</span>`;
+      btn.innerHTML = `<span class="text-xl">${s.icon}</span><span class="text-sm">${s.label}</span>`;
       btn.className = 'flex flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-3 text-sm bg-white/60 hover:bg-black hover:text-white transition';
       btn.onclick = () => {
         currentStatus = s;
@@ -81,6 +97,23 @@
     });
     statusButtons.children[0].classList.add('bg-black','text-white');
 
+    /* =====================
+       工具函数
+    ====================== */
+    function timeAgo(ts) {
+      const diff = Math.floor((Date.now() - new Date(ts)) / 60000);
+      if (diff < 1) return '刚刚';
+      if (diff < 60) return `${diff} 分钟前`;
+      return `${Math.floor(diff / 60)} 小时前`;
+    }
+
+    function statusIcon(label) {
+      return STATUSES.find(s => s.label === label)?.icon || '❓';
+    }
+
+    /* =====================
+       拉取 & 渲染状态
+    ====================== */
     async function fetchStatus() {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=*`, {
         headers: {
@@ -92,54 +125,45 @@
       render(data);
     }
 
-    function timeAgo(ts) {
-      const diff = Math.floor((Date.now() - new Date(ts)) / 60000);
-      if (diff < 1) return '刚刚';
-      if (diff < 60) return `${diff} 分钟前`;
-      return `${Math.floor(diff / 60)} 小时前`;
-    }
-
-    function statusIcon(status) {
-      const map = {
-        '摸鱼中': '🐟',
-        '忙成狗': '🐕‍🦺',
-        '会议地狱': '🔥',
-        '拉屎中': '🚽',
-        '假装很忙': '🎭',
-        '即将解放': '🕊️',
-        '今晚无了': '💀'
-      };
-      return map[status] || '❓';
-    }
-
     function render(list) {
       const el = document.getElementById('statusList');
       el.innerHTML = '';
-      list.forEach(item => {
-        const card = document.createElement('div');
-        card.className = 'rounded-2xl p-4 bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200';
-        card.innerHTML = `
-          <div class="text-xl font-bold">${item.name}</div>
-          <div class="mt-1 text-lg">${statusIcon(item.status)} ${item.status}</div>
-          <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
-          <div class="text-xs text-neutral-600 mt-1">${timeAgo(item.updated_at)}</div>
-        `;
-        el.appendChild(card);
-      });
+
+      list
+        .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+        .forEach(item => {
+          const isMe = item.id === USER_ID;
+          const isExpired = item.offwork_time && new Date(`1970-01-01T${item.offwork_time}:00`) < new Date();
+
+          const card = document.createElement('div');
+          card.className = `rounded-2xl p-4 ${isMe ? 'ring-2 ring-black' : ''} ${isExpired ? 'opacity-40' : 'bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200'}`;
+
+          card.innerHTML = `
+            <div class="text-xl font-bold">${isMe ? '我' : 'TA'}</div>
+            <div class="mt-1 text-lg">${statusIcon(item.status)} ${item.status}</div>
+            <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
+            <div class="text-xs text-neutral-600 mt-1">${timeAgo(item.updated_at)}</div>
+          `;
+          el.appendChild(card);
+        });
     }
 
+    /* =====================
+       更新状态（Upsert）
+    ====================== */
     document.getElementById('updateBtn').onclick = async () => {
       const time = document.getElementById('timeInput').value;
 
-      await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${ME_ID}`, {
-        method: 'PATCH',
+      await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
+        method: 'POST',
         headers: {
           apikey: SUPABASE_KEY,
           Authorization: `Bearer ${SUPABASE_KEY}`,
           'Content-Type': 'application/json',
-          Prefer: 'return=minimal'
+          Prefer: 'resolution=merge-duplicates'
         },
         body: JSON.stringify({
+          id: USER_ID,
           status: currentStatus.label,
           offwork_time: time,
           updated_at: new Date().toISOString()
