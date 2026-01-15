@@ -63,11 +63,12 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 
 const params = new URLSearchParams(location.search);
-const ROOM_SECRET = params.get('room');
+const ROOM_ID = params.get('room_id');
+const ROLE = params.get('role');
 
-if (!ROOM_SECRET) {
-  alert('缺少 room 参数');
-  throw new Error('room required');
+if (!ROOM_ID || !ROLE || !['me', 'ta'].includes(ROLE)) {
+  alert('缺少 room_id 或 role 参数，role 必须是 me 或 ta');
+  throw new Error('room_id and role required');
 }
 
 /* =====================
@@ -84,56 +85,46 @@ const STATUSES = [
 ];
 
 let currentStatus = STATUSES[0];
-let ROOM_ID = null;
-let MY_MEMBER_ID = localStorage.getItem(`member_id_${ROOM_SECRET}`);
-let MY_ROLE = localStorage.getItem(`member_role_${ROOM_SECRET}`);
+let MY_MEMBER_ID = localStorage.getItem(`member_id_${ROOM_ID}_${ROLE}`);
+let MY_ROLE = ROLE;
 
 /* =====================
    初始化流程
 ===================== */
 async function init() {
-  ROOM_ID = await fetchRoomId();
   if (!MY_MEMBER_ID) {
-    await chooseRoleAndBind();
+    await bindMemberId();
   }
   await fetchAndRender();
 }
 
-/* Step 1: room_secret → room_id */
-async function fetchRoomId() {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/couples?secret=${ROOM_SECRET}&select=id`,
-    authHeader()
-  );
-  const data = await res.json();
-  if (!data[0]) {
-    alert('房间不存在');
-    throw new Error('room not found');
+/* 获取并绑定member_id */
+async function bindMemberId() {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/couple_members?couple_id=eq.${ROOM_ID}&role=eq.${ROLE}&select=id`,
+      authHeader()
+    );
+    
+    if (!res.ok) {
+      throw new Error(`API请求失败: ${res.status} ${res.statusText}`);
+    }
+    
+    const data = await res.json();
+    
+    // 检查数据是否为数组且包含元素
+    if (!Array.isArray(data) || data.length === 0) {
+      alert(`未找到成员信息，请检查 room_id 和 role 参数是否正确\n\nroom_id: ${ROOM_ID}\nrole: ${ROLE}`);
+      throw new Error('member not found');
+    }
+
+    MY_MEMBER_ID = data[0].id;
+    localStorage.setItem(`member_id_${ROOM_ID}_${ROLE}`, MY_MEMBER_ID);
+  } catch (error) {
+    console.error('获取成员信息失败:', error);
+    alert(`获取成员信息失败: ${error.message}`);
+    throw error;
   }
-  return data[0].id;
-}
-
-
-/* Step 2: 选择我 / TA → member_id */
-async function chooseRoleAndBind() {
-  const isMe = confirm(
-    '你是「我」吗？\n\n确定 = 我\n取消 = TA'
-  );
-  MY_ROLE = isMe ? 'me' : 'ta';
-
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/couple_members?couple_id=${ROOM_ID}&role=${MY_ROLE}&select=id`,
-    authHeader()
-  );
-  const data = await res.json();
-  if (!data[0]) {
-    alert('成员不存在');
-    throw new Error('member not found');
-  }
-
-  MY_MEMBER_ID = data[0].id;
-  localStorage.setItem(`member_id_${ROOM_SECRET}`, MY_MEMBER_ID);
-  localStorage.setItem(`member_role_${ROOM_SECRET}`, MY_ROLE);
 }
 
 
@@ -166,29 +157,51 @@ function timeAgo(ts) {
    数据
 ===================== */
 async function fetchAndRender() {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/offwork_status?select=*,members(role,display_name)&members.room_id=${ROOM_ID}`,
-    authHeader()
-  );
-  const data = await res.json();
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/offwork_status?select=*,couple_members(role,display_name)&couple_members.couple_id=eq.${ROOM_ID}`,
+      authHeader()
+    );
+    
+    if (!res.ok) {
+      throw new Error(`API请求失败: ${res.status} ${res.statusText}`);
+    }
+    
+    const data = await res.json();
 
-  const el = document.getElementById('statusList');
-  el.innerHTML = '';
+    const el = document.getElementById('statusList');
+    el.innerHTML = '';
 
-  data.forEach(item => {
-    const isMe = item.member_id === MY_MEMBER_ID;
-    const card = document.createElement('div');
-    card.className =
-      `rounded-2xl p-4 bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200
-       ${isMe ? 'ring-2 ring-black' : ''}`;
-    card.innerHTML = `
-      <div class="font-bold text-xl">${item.members.display_name}</div>
-      <div class="mt-1 text-lg">${item.status || '状态未知'}</div>
-      <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
-      <div class="text-xs text-neutral-600 mt-1">${timeAgo(item.updated_at)}</div>
-    `;
-    el.appendChild(card);
-  });
+    // 检查数据是否为数组
+    if (!Array.isArray(data)) {
+      el.innerHTML = '<div class="text-center text-neutral-500 py-8">暂无状态信息</div>';
+      return;
+    }
+
+    if (data.length === 0) {
+      el.innerHTML = '<div class="text-center text-neutral-500 py-8">暂无状态信息</div>';
+      return;
+    }
+
+    data.forEach(item => {
+      const isMe = item.member_id === MY_MEMBER_ID;
+      const card = document.createElement('div');
+      card.className =
+        `rounded-2xl p-4 bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200
+         ${isMe ? 'ring-2 ring-black' : ''}`;
+      card.innerHTML = `
+        <div class="font-bold text-xl">${item.couple_members?.display_name || '未知用户'}</div>
+        <div class="mt-1 text-lg">${item.status || '状态未知'}</div>
+        <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
+        <div class="text-xs text-neutral-600 mt-1">${item.updated_at ? timeAgo(item.updated_at) : '未知时间'}</div>
+      `;
+      el.appendChild(card);
+    });
+  } catch (error) {
+    console.error('获取状态信息失败:', error);
+    const el = document.getElementById('statusList');
+    el.innerHTML = `<div class="text-center text-red-500 py-8">获取状态失败：${error.message}</div>`;
+  }
 }
 
 /* =====================
