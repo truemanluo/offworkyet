@@ -85,16 +85,14 @@ const STATUSES = [
 ];
 
 let currentStatus = STATUSES[0];
-let MY_MEMBER_ID = localStorage.getItem(`member_id_${ROOM_ID}_${ROLE}`);
+let MY_MEMBER_ID = null;
 let MY_ROLE = ROLE;
 
 /* =====================
    初始化流程
 ===================== */
 async function init() {
-  if (!MY_MEMBER_ID) {
-    await bindMemberId();
-  }
+  await bindMemberId();
   await fetchAndRender();
 }
 
@@ -119,7 +117,6 @@ async function bindMemberId() {
     }
 
     MY_MEMBER_ID = data[0].id;
-    localStorage.setItem(`member_id_${ROOM_ID}_${ROLE}`, MY_MEMBER_ID);
   } catch (error) {
     console.error('获取成员信息失败:', error);
     alert(`获取成员信息失败: ${error.message}`);
@@ -183,20 +180,42 @@ async function fetchAndRender() {
       return;
     }
 
-    data.forEach(item => {
-      const isMe = item.member_id === MY_MEMBER_ID;
+    // 始终将当前用户（通过URL参数ROLE获取的member_id）显示为"我"
+    // 将另一个用户显示为"对方"或"ta"
+    
+    // 获取当前用户和对方的状态
+    const currentUserStatus = data.find(item => item.member_id === MY_MEMBER_ID);
+    const otherUserStatus = data.find(item => item.member_id !== MY_MEMBER_ID);
+    
+    // 先渲染当前用户的状态卡片（始终显示为"我"）
+    if (currentUserStatus) {
       const card = document.createElement('div');
-      card.className =
-        `rounded-2xl p-4 bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200
-         ${isMe ? 'ring-2 ring-black' : ''}`;
+      card.className = 'rounded-2xl p-4 bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200 ring-2 ring-black';
+      // 当前用户始终显示为"我"
+      const myDisplayName = '我';
       card.innerHTML = `
-        <div class="font-bold text-xl">${item.couple_members?.display_name || '未知用户'}</div>
-        <div class="mt-1 text-lg">${item.status || '状态未知'}</div>
-        <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
-        <div class="text-xs text-neutral-600 mt-1">${item.updated_at ? timeAgo(item.updated_at) : '未知时间'}</div>
+        <div class="font-bold text-xl">${myDisplayName}</div>
+        <div class="mt-1 text-lg">${currentUserStatus.status || '状态未知'}</div>
+        <div class="text-sm">最早下班：${currentUserStatus.offwork_time || '未知'}</div>
+        <div class="text-xs text-neutral-600 mt-1">${currentUserStatus.updated_at ? timeAgo(currentUserStatus.updated_at) : '未知时间'}</div>
       `;
       el.appendChild(card);
-    });
+    }
+    
+    // 然后渲染对方的状态卡片
+    if (otherUserStatus) {
+      const card = document.createElement('div');
+      card.className = 'rounded-2xl p-4 bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200';
+      // 根据URL参数决定对方的显示名称
+      const otherDisplayName = ROLE === 'ta' ? 'TA' : (otherUserStatus.couple_members?.display_name || '对方');
+      card.innerHTML = `
+        <div class="font-bold text-xl">${otherDisplayName}</div>
+        <div class="mt-1 text-lg">${otherUserStatus.status || '状态未知'}</div>
+        <div class="text-sm">最早下班：${otherUserStatus.offwork_time || '未知'}</div>
+        <div class="text-xs text-neutral-600 mt-1">${otherUserStatus.updated_at ? timeAgo(otherUserStatus.updated_at) : '未知时间'}</div>
+      `;
+      el.appendChild(card);
+    }
   } catch (error) {
     console.error('获取状态信息失败:', error);
     const el = document.getElementById('statusList');
@@ -211,7 +230,7 @@ document.getElementById('updateBtn').onclick = async () => {
   const time = document.getElementById('timeInput').value;
 
   await fetch(
-    `${SUPABASE_URL}/rest/v1/offwork_status?member_id=${MY_MEMBER_ID}`,
+    `${SUPABASE_URL}/rest/v1/offwork_status?member_id=eq.${MY_MEMBER_ID}`,
     {
       method: 'PATCH',
       headers: {
