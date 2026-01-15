@@ -5,197 +5,133 @@
   <title>下班了吗</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <style>
-    body {
-      background: linear-gradient(135deg, #ff6ec4, #7873f5, #4ade80);
-      background-size: 400% 400%;
-      animation: gradientMove 15s ease infinite;
-    }
-    @keyframes gradientMove {
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
-  </style>
 </head>
 
-<body class="min-h-screen flex items-center justify-center text-neutral-900">
-  <div class="w-full max-w-md p-6">
-    <div class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl p-6 space-y-6">
+<body class="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-400 via-purple-400 to-green-300">
+<div class="w-full max-w-md p-6">
+  <div class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl p-6 space-y-6">
 
-      <header>
-        <h1 class="text-4xl font-black">下班了吗</h1>
-        <p class="text-sm text-neutral-600 mt-1">一种不打扰的关心方式</p>
-      </header>
+    <header>
+      <h1 class="text-4xl font-black">下班了吗</h1>
+      <p class="text-sm text-neutral-600 mt-1">一种不打扰的关心方式</p>
+    </header>
 
-      <section id="statusList" class="space-y-4"></section>
+    <section id="statusList" class="space-y-4"></section>
 
-      <section class="space-y-3 pt-2">
-        <h2 class="font-semibold">我现在是</h2>
-        <div id="statusButtons" class="grid grid-cols-3 gap-2"></div>
+    <section class="space-y-3 pt-2">
+      <h2 class="font-semibold">我现在是</h2>
+      <div id="statusButtons" class="grid grid-cols-3 gap-2"></div>
 
-        <div class="flex items-center gap-2">
-          <span class="text-sm">最早几点跑：</span>
-          <input id="timeInput" type="time"
-            class="flex-1 rounded-xl border px-3 py-2" />
-        </div>
+      <div class="flex items-center gap-2">
+        <span class="text-sm">最早几点跑：</span>
+        <input id="timeInput" type="time"
+          class="flex-1 rounded-xl border px-3 py-2" />
+      </div>
 
-        <button id="updateBtn"
-          class="w-full rounded-2xl bg-black text-white py-3 font-semibold active:scale-95 transition">
-          更新状态
-        </button>
-      </section>
+      <button id="updateBtn"
+        class="w-full rounded-2xl bg-black text-white py-3 font-semibold">
+        更新状态
+      </button>
+    </section>
 
-      <footer class="text-xs text-center text-neutral-500 pt-2">
-        多巴胺仍在分泌中
-      </footer>
+    <footer class="text-xs text-center text-neutral-500 pt-2">
+      多巴胺仍在分泌中
+    </footer>
 
-    </div>
   </div>
+</div>
 
 <script>
-/* =====================
-   基础配置（必改）
-===================== */
 const SUPABASE_URL = 'https://pwfglucsclutdrwnhuhz.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3ZmdsdWNzY2x1dGRyd25odWh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODMwOTAsImV4cCI6MjA4NDA1OTA5MH0.5OLlw_rzO3SaQZqDHeZ8_iBwlJgNOtQMa3OlhdpAzrM';
 
-const TABLE = 'offwork_status';
 
-/* =====================
-   身份确定（邀请链接版）
-===================== */
-const params = new URLSearchParams(window.location.search);
-const invitedWho = params.get('who'); // 'me' | 'ta'
-
-let MY_ID = localStorage.getItem('offwork_my_id');
-
-if (invitedWho === 'me' || invitedWho === 'ta') {
-  MY_ID = invitedWho;
-  localStorage.setItem('offwork_my_id', MY_ID);
-} else if (!MY_ID) {
-  const isMe = confirm(
-    '你是「我」吗？\n\n' +
-    '点【确定】= 我\n' +
-    '点【取消】= TA'
-  );
-  MY_ID = isMe ? 'me' : 'ta';
-  localStorage.setItem('offwork_my_id', MY_ID);
+const params = new URLSearchParams(location.search);
+const ROOM_SECRET = params.get('room');
+if (!ROOM_SECRET) {
+  alert('缺少房间链接');
+  throw new Error('no room');
 }
 
-/* =====================
-   状态定义
-===================== */
-const STATUSES = [
-  { label: '摸鱼中', icon: '🐟' },
-  { label: '忙成狗', icon: '🐕‍🦺' },
-  { label: '会议地狱', icon: '🔥' },
-  { label: '拉屎中', icon: '🚽' },
-  { label: '假装很忙', icon: '🎭' },
-  { label: '即将解放', icon: '🕊️' },
-  { label: '今晚无了', icon: '💀' }
-];
+let ROLE = localStorage.getItem('offwork_role');
+if (!ROLE) {
+  ROLE = confirm('你是「我」吗？') ? 'me' : 'ta';
+  localStorage.setItem('offwork_role', ROLE);
+}
 
-let currentStatus = STATUSES[0];
+let MY_MEMBER_ID = null;
 
-/* =====================
-   状态按钮
-===================== */
-const statusButtons = document.getElementById('statusButtons');
-STATUSES.forEach((s, i) => {
-  const btn = document.createElement('button');
-  btn.className =
-    'rounded-2xl border px-2 py-3 flex flex-col items-center gap-1 bg-white/60 transition';
-  btn.innerHTML = `<span class="text-xl">${s.icon}</span><span>${s.label}</span>`;
-  btn.onclick = () => {
-    currentStatus = s;
-    [...statusButtons.children].forEach(b => b.classList.remove('bg-black','text-white'));
-    btn.classList.add('bg-black','text-white');
+function headers(extra = {}) {
+  return {
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json',
+    'request.jwt.claim.secret': ROOM_SECRET,
+    ...extra
   };
-  if (i === 0) btn.classList.add('bg-black','text-white');
-  statusButtons.appendChild(btn);
-});
-
-/* =====================
-   工具函数
-===================== */
-function timeAgo(ts) {
-  const diff = Math.floor((Date.now() - new Date(ts)) / 60000);
-  if (diff < 1) return '刚刚';
-  if (diff < 60) return `${diff} 分钟前`;
-  return `${Math.floor(diff / 60)} 小时前`;
 }
 
-/* =====================
-   数据拉取 & 渲染
-===================== */
+async function init() {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/couple_members?select=id,role,display_name`,
+    { headers: headers() }
+  );
+  const members = await res.json();
+  const me = members.find(m => m.role === ROLE);
+  if (!me) {
+    alert('身份不匹配');
+    return;
+  }
+  MY_MEMBER_ID = me.id;
+  fetchStatus();
+}
+
 async function fetchStatus() {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/${TABLE}?select=*`,
-    {
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`
-      }
-    }
+    `${SUPABASE_URL}/rest/v1/offwork_status?select=member_id,status,offwork_time,updated_at,couple_members(display_name,role)`,
+    { headers: headers() }
   );
   const data = await res.json();
   render(data);
 }
 
 function render(list) {
-  const map = {};
-  list.forEach(i => map[i.id] = i);
-
-  const ordered = ['me','ta'].map(id => map[id]).filter(Boolean);
   const el = document.getElementById('statusList');
   el.innerHTML = '';
-
-  ordered.forEach(item => {
-    const isMe = item.id === MY_ID;
-    const card = document.createElement('div');
-    card.className =
-      `rounded-2xl p-4 bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200
-       ${isMe ? 'ring-2 ring-black' : ''}`;
-    card.innerHTML = `
-      <div class="font-bold text-xl">${item.name}</div>
-      <div class="mt-1 text-lg">${item.status || '状态未知'}</div>
-      <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
-      <div class="text-xs text-neutral-600 mt-1">${timeAgo(item.updated_at)}</div>
-    `;
-    el.appendChild(card);
-  });
+  list
+    .sort((a,b)=>a.couple_members.role==='me'?-1:1)
+    .forEach(item => {
+      const isMe = item.member_id === MY_MEMBER_ID;
+      el.innerHTML += `
+        <div class="rounded-2xl p-4 bg-white ${isMe?'ring-2 ring-black':''}">
+          <div class="font-bold text-xl">${item.couple_members.display_name}</div>
+          <div>${item.status || '状态未知'}</div>
+          <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
+        </div>
+      `;
+    });
 }
 
-/* =====================
-   更新状态（只 UPDATE）
-===================== */
 document.getElementById('updateBtn').onclick = async () => {
   const time = document.getElementById('timeInput').value;
-
   await fetch(
-    `${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${MY_ID}`,
+    `${SUPABASE_URL}/rest/v1/offwork_status?member_id=eq.${MY_MEMBER_ID}`,
     {
       method: 'PATCH',
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json'
-      },
+      headers: headers({
+        'request.jwt.claim.member_id': MY_MEMBER_ID
+      }),
       body: JSON.stringify({
-        status: currentStatus.label,
+        status: document.querySelector('#statusButtons .bg-black')?.innerText,
         offwork_time: time,
         updated_at: new Date().toISOString()
       })
     }
   );
-
   fetchStatus();
 };
 
-fetchStatus();
-setInterval(fetchStatus, 60000);
+init();
 </script>
 </body>
 </html>
