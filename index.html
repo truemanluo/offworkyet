@@ -122,7 +122,7 @@ async function chooseRoleAndBind() {
   MY_ROLE = isMe ? 'me' : 'ta';
 
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/couple_members?couple_id=${ROOM_ID}&role=eq.${MY_ROLE}&select=id`,
+    `${SUPABASE_URL}/rest/v1/couple_members?couple_id=${ROOM_ID}&role=${MY_ROLE}&select=id`,
     authHeader()
   );
   const data = await res.json();
@@ -167,7 +167,7 @@ function timeAgo(ts) {
 ===================== */
 async function fetchAndRender() {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/offwork_status?select=*,members(role,display_name)&members.room_id=eq.${ROOM_ID}`,
+    `${SUPABASE_URL}/rest/v1/offwork_status?select=*,members(role,display_name)&members.room_id=${ROOM_ID}`,
     authHeader()
   );
   const data = await res.json();
@@ -198,7 +198,7 @@ document.getElementById('updateBtn').onclick = async () => {
   const time = document.getElementById('timeInput').value;
 
   await fetch(
-    `${SUPABASE_URL}/rest/v1/offwork_status?member_id=eq.${MY_MEMBER_ID}`,
+    `${SUPABASE_URL}/rest/v1/offwork_status?member_id=${MY_MEMBER_ID}`,
     {
       method: 'PATCH',
       headers: {
