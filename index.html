@@ -5,9 +5,22 @@
   <title>下班了吗</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    body {
+      background: linear-gradient(135deg, #ff6ec4, #7873f5, #4ade80);
+      background-size: 400% 400%;
+      animation: gradientMove 15s ease infinite;
+    }
+    @keyframes gradientMove {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+  </style>
 </head>
 
-<body class="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-400 via-purple-400 to-green-300">
+<body class="min-h-screen flex items-center justify-center text-neutral-900">
 <div class="w-full max-w-md p-6">
   <div class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl p-6 space-y-6">
 
@@ -25,11 +38,11 @@
       <div class="flex items-center gap-2">
         <span class="text-sm">最早几点跑：</span>
         <input id="timeInput" type="time"
-          class="flex-1 rounded-xl border px-3 py-2" />
+               class="flex-1 rounded-xl border px-3 py-2" />
       </div>
 
       <button id="updateBtn"
-        class="w-full rounded-2xl bg-black text-white py-3 font-semibold">
+        class="w-full rounded-2xl bg-black text-white py-3 font-semibold active:scale-95 transition">
         更新状态
       </button>
     </section>
@@ -42,94 +55,173 @@
 </div>
 
 <script>
+/* =====================
+   基础配置
+===================== */
 const SUPABASE_URL = 'https://pwfglucsclutdrwnhuhz.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3ZmdsdWNzY2x1dGRyd25odWh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODMwOTAsImV4cCI6MjA4NDA1OTA5MH0.5OLlw_rzO3SaQZqDHeZ8_iBwlJgNOtQMa3OlhdpAzrM';
 
 
 const params = new URLSearchParams(location.search);
 const ROOM_SECRET = params.get('room');
+
 if (!ROOM_SECRET) {
-  alert('缺少房间链接');
-  throw new Error('no room');
+  alert('缺少 room 参数');
+  throw new Error('room required');
 }
 
-let ROLE = localStorage.getItem('offwork_role');
-if (!ROLE) {
-  ROLE = confirm('你是「我」吗？') ? 'me' : 'ta';
-  localStorage.setItem('offwork_role', ROLE);
-}
+/* =====================
+   状态定义
+===================== */
+const STATUSES = [
+  { label: '摸鱼中', icon: '🐟' },
+  { label: '忙成狗', icon: '🐕‍🦺' },
+  { label: '会议地狱', icon: '🔥' },
+  { label: '拉屎中', icon: '🚽' },
+  { label: '假装很忙', icon: '🎭' },
+  { label: '即将解放', icon: '🕊️' },
+  { label: '今晚无了', icon: '💀' }
+];
 
-let MY_MEMBER_ID = null;
+let currentStatus = STATUSES[0];
+let ROOM_ID = null;
+let MY_MEMBER_ID = localStorage.getItem(`member_id_${ROOM_SECRET}`);
+let MY_ROLE = localStorage.getItem(`member_role_${ROOM_SECRET}`);
 
-function headers(extra = {}) {
-  return {
-    apikey: SUPABASE_KEY,
-    Authorization: `Bearer ${SUPABASE_KEY}`,
-    'Content-Type': 'application/json',
-    'request.jwt.claim.secret': ROOM_SECRET,
-    ...extra
-  };
-}
-
+/* =====================
+   初始化流程
+===================== */
 async function init() {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/couple_members?select=id,role,display_name`,
-    { headers: headers() }
-  );
-  const members = await res.json();
-  const me = members.find(m => m.role === ROLE);
-  if (!me) {
-    alert('身份不匹配');
-    return;
+  ROOM_ID = await fetchRoomId();
+  if (!MY_MEMBER_ID) {
+    await chooseRoleAndBind();
   }
-  MY_MEMBER_ID = me.id;
-  fetchStatus();
+  await fetchAndRender();
 }
 
-async function fetchStatus() {
+/* Step 1: room_secret → room_id */
+async function fetchRoomId() {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/offwork_status?select=member_id,status,offwork_time,updated_at,couple_members(display_name,role)`,
-    { headers: headers() }
+    `${SUPABASE_URL}/rest/v1/rooms?secret=eq.${ROOM_SECRET}&select=id`,
+    authHeader()
   );
   const data = await res.json();
-  render(data);
+  if (!data[0]) {
+    alert('房间不存在');
+    throw new Error('room not found');
+  }
+  return data[0].id;
 }
 
-function render(list) {
+/* Step 2: 选择我 / TA → member_id */
+async function chooseRoleAndBind() {
+  const isMe = confirm(
+    '你是「我」吗？\n\n确定 = 我\n取消 = TA'
+  );
+  MY_ROLE = isMe ? 'me' : 'ta';
+
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/members?room_id=eq.${ROOM_ID}&role=eq.${MY_ROLE}&select=id`,
+    authHeader()
+  );
+  const data = await res.json();
+  if (!data[0]) {
+    alert('成员不存在');
+    throw new Error('member not found');
+  }
+
+  MY_MEMBER_ID = data[0].id;
+  localStorage.setItem(`member_id_${ROOM_SECRET}`, MY_MEMBER_ID);
+  localStorage.setItem(`member_role_${ROOM_SECRET}`, MY_ROLE);
+}
+
+/* =====================
+   UI
+===================== */
+const statusButtons = document.getElementById('statusButtons');
+STATUSES.forEach((s, i) => {
+  const btn = document.createElement('button');
+  btn.className =
+    'rounded-2xl border px-2 py-3 flex flex-col items-center gap-1 bg-white/60 transition';
+  btn.innerHTML = `<span class="text-xl">${s.icon}</span><span>${s.label}</span>`;
+  btn.onclick = () => {
+    currentStatus = s;
+    [...statusButtons.children].forEach(b => b.classList.remove('bg-black','text-white'));
+    btn.classList.add('bg-black','text-white');
+  };
+  if (i === 0) btn.classList.add('bg-black','text-white');
+  statusButtons.appendChild(btn);
+});
+
+function timeAgo(ts) {
+  const diff = Math.floor((Date.now() - new Date(ts)) / 60000);
+  if (diff < 1) return '刚刚';
+  if (diff < 60) return `${diff} 分钟前`;
+  return `${Math.floor(diff / 60)} 小时前`;
+}
+
+/* =====================
+   数据
+===================== */
+async function fetchAndRender() {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/offwork_status?select=*,members(role,display_name)&members.room_id=eq.${ROOM_ID}`,
+    authHeader()
+  );
+  const data = await res.json();
+
   const el = document.getElementById('statusList');
   el.innerHTML = '';
-  list
-    .sort((a,b)=>a.couple_members.role==='me'?-1:1)
-    .forEach(item => {
-      const isMe = item.member_id === MY_MEMBER_ID;
-      el.innerHTML += `
-        <div class="rounded-2xl p-4 bg-white ${isMe?'ring-2 ring-black':''}">
-          <div class="font-bold text-xl">${item.couple_members.display_name}</div>
-          <div>${item.status || '状态未知'}</div>
-          <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
-        </div>
-      `;
-    });
+
+  data.forEach(item => {
+    const isMe = item.member_id === MY_MEMBER_ID;
+    const card = document.createElement('div');
+    card.className =
+      `rounded-2xl p-4 bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200
+       ${isMe ? 'ring-2 ring-black' : ''}`;
+    card.innerHTML = `
+      <div class="font-bold text-xl">${item.members.display_name}</div>
+      <div class="mt-1 text-lg">${item.status || '状态未知'}</div>
+      <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
+      <div class="text-xs text-neutral-600 mt-1">${timeAgo(item.updated_at)}</div>
+    `;
+    el.appendChild(card);
+  });
 }
 
+/* =====================
+   更新（只 PATCH）
+===================== */
 document.getElementById('updateBtn').onclick = async () => {
   const time = document.getElementById('timeInput').value;
+
   await fetch(
     `${SUPABASE_URL}/rest/v1/offwork_status?member_id=eq.${MY_MEMBER_ID}`,
     {
       method: 'PATCH',
-      headers: headers({
-        'request.jwt.claim.member_id': MY_MEMBER_ID
-      }),
+      headers: {
+        ...authHeader().headers,
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
-        status: document.querySelector('#statusButtons .bg-black')?.innerText,
+        status: currentStatus.label,
         offwork_time: time,
         updated_at: new Date().toISOString()
       })
     }
   );
-  fetchStatus();
+
+  fetchAndRender();
 };
+
+function authHeader() {
+  return {
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`
+    }
+  };
+}
 
 init();
 </script>
