@@ -5,6 +5,7 @@
   <title>下班了吗</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
+
   <style>
     body {
       background: linear-gradient(135deg, #ff6ec4, #7873f5, #4ade80);
@@ -18,163 +19,183 @@
     }
   </style>
 </head>
+
 <body class="min-h-screen flex items-center justify-center text-neutral-900">
   <div class="w-full max-w-md p-6">
     <div class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl p-6 space-y-6">
-      <header class="space-y-2">
-        <h1 class="text-4xl font-black tracking-tight">下班了吗</h1>
-        <p class="text-sm text-neutral-600">一种不打扰的关心方式</p>
+
+      <header>
+        <h1 class="text-4xl font-black">下班了吗</h1>
+        <p class="text-sm text-neutral-600 mt-1">一种不打扰的关心方式</p>
       </header>
 
       <section id="statusList" class="space-y-4"></section>
 
-      <section class="pt-2 space-y-3">
-        <h2 class="text-lg font-semibold">我现在是</h2>
+      <section class="space-y-3 pt-2">
+        <h2 class="font-semibold">我现在是</h2>
         <div id="statusButtons" class="grid grid-cols-3 gap-2"></div>
 
         <div class="flex items-center gap-2">
           <span class="text-sm">最早几点跑：</span>
-          <input id="timeInput" type="time" class="flex-1 rounded-xl border px-3 py-2" />
+          <input id="timeInput" type="time"
+            class="flex-1 rounded-xl border px-3 py-2" />
         </div>
 
-        <button id="updateBtn" class="w-full rounded-2xl bg-black text-white py-3 font-semibold active:scale-95 transition">
+        <button id="updateBtn"
+          class="w-full rounded-2xl bg-black text-white py-3 font-semibold active:scale-95 transition">
           更新状态
         </button>
       </section>
 
-      <footer class="text-xs text-neutral-500 text-center pt-2">
-        下班倒计时中…
+      <footer class="text-xs text-center text-neutral-500 pt-2">
+        多巴胺仍在分泌中
       </footer>
+
     </div>
   </div>
 
-  <script>
-    /* =====================
-       基础配置
-    ====================== */
-    const SUPABASE_URL = 'https://pwfglucsclutdrwnhuhz.supabase.co';
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3ZmdsdWNzY2x1dGRyd25odWh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODMwOTAsImV4cCI6MjA4NDA1OTA5MH0.5OLlw_rzO3SaQZqDHeZ8_iBwlJgNOtQMa3OlhdpAzrM';
-    const TABLE = 'offwork_status';
+<script>
+/* =====================
+   基础配置（必改）
+===================== */
+const SUPABASE_URL = 'https://pwfglucsclutdrwnhuhz.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3ZmdsdWNzY2x1dGRyd25odWh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODMwOTAsImV4cCI6MjA4NDA1OTA5MH0.5OLlw_rzO3SaQZqDHeZ8_iBwlJgNOtQMa3OlhdpAzrM';
 
-    /* =====================
-       身份生成（每个浏览器唯一）
-    ====================== */
-    let USER_ID = localStorage.getItem('offwork_user_id');
-    if (!USER_ID) {
-      USER_ID = crypto.randomUUID();
-      localStorage.setItem('offwork_user_id', USER_ID);
+const TABLE = 'offwork_status';
+
+/* =====================
+   身份确定（邀请链接版）
+===================== */
+const params = new URLSearchParams(window.location.search);
+const invitedWho = params.get('who'); // 'me' | 'ta'
+
+let MY_ID = localStorage.getItem('offwork_my_id');
+
+if (invitedWho === 'me' || invitedWho === 'ta') {
+  MY_ID = invitedWho;
+  localStorage.setItem('offwork_my_id', MY_ID);
+} else if (!MY_ID) {
+  const isMe = confirm(
+    '你是「我」吗？\n\n' +
+    '点【确定】= 我\n' +
+    '点【取消】= TA'
+  );
+  MY_ID = isMe ? 'me' : 'ta';
+  localStorage.setItem('offwork_my_id', MY_ID);
+}
+
+/* =====================
+   状态定义
+===================== */
+const STATUSES = [
+  { label: '摸鱼中', icon: '🐟' },
+  { label: '忙成狗', icon: '🐕‍🦺' },
+  { label: '会议地狱', icon: '🔥' },
+  { label: '拉屎中', icon: '🚽' },
+  { label: '假装很忙', icon: '🎭' },
+  { label: '即将解放', icon: '🕊️' },
+  { label: '今晚无了', icon: '💀' }
+];
+
+let currentStatus = STATUSES[0];
+
+/* =====================
+   状态按钮
+===================== */
+const statusButtons = document.getElementById('statusButtons');
+STATUSES.forEach((s, i) => {
+  const btn = document.createElement('button');
+  btn.className =
+    'rounded-2xl border px-2 py-3 flex flex-col items-center gap-1 bg-white/60 transition';
+  btn.innerHTML = `<span class="text-xl">${s.icon}</span><span>${s.label}</span>`;
+  btn.onclick = () => {
+    currentStatus = s;
+    [...statusButtons.children].forEach(b => b.classList.remove('bg-black','text-white'));
+    btn.classList.add('bg-black','text-white');
+  };
+  if (i === 0) btn.classList.add('bg-black','text-white');
+  statusButtons.appendChild(btn);
+});
+
+/* =====================
+   工具函数
+===================== */
+function timeAgo(ts) {
+  const diff = Math.floor((Date.now() - new Date(ts)) / 60000);
+  if (diff < 1) return '刚刚';
+  if (diff < 60) return `${diff} 分钟前`;
+  return `${Math.floor(diff / 60)} 小时前`;
+}
+
+/* =====================
+   数据拉取 & 渲染
+===================== */
+async function fetchStatus() {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/${TABLE}?select=*`,
+    {
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`
+      }
     }
+  );
+  const data = await res.json();
+  render(data);
+}
 
-    /* =====================
-       状态定义
-    ====================== */
-    const STATUSES = [
-      { label: '摸鱼中', icon: '🐟' },
-      { label: '忙成狗', icon: '🐕‍🦺' },
-      { label: '会议地狱', icon: '🔥' },
-      { label: '拉屎中', icon: '🚽' },
-      { label: '假装很忙', icon: '🎭' },
-      { label: '即将解放', icon: '🕊️' },
-      { label: '今晚无了', icon: '💀' }
-    ];
+function render(list) {
+  const map = {};
+  list.forEach(i => map[i.id] = i);
 
-    let currentStatus = STATUSES[0];
+  const ordered = ['me','ta'].map(id => map[id]).filter(Boolean);
+  const el = document.getElementById('statusList');
+  el.innerHTML = '';
 
-    /* =====================
-       状态按钮渲染
-    ====================== */
-    const statusButtons = document.getElementById('statusButtons');
-    STATUSES.forEach(s => {
-      const btn = document.createElement('button');
-      btn.innerHTML = `<span class="text-xl">${s.icon}</span><span class="text-sm">${s.label}</span>`;
-      btn.className = 'flex flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-3 text-sm bg-white/60 hover:bg-black hover:text-white transition';
-      btn.onclick = () => {
-        currentStatus = s;
-        [...statusButtons.children].forEach(b => b.classList.remove('bg-black','text-white'));
-        btn.classList.add('bg-black','text-white');
-      };
-      statusButtons.appendChild(btn);
-    });
-    statusButtons.children[0].classList.add('bg-black','text-white');
+  ordered.forEach(item => {
+    const isMe = item.id === MY_ID;
+    const card = document.createElement('div');
+    card.className =
+      `rounded-2xl p-4 bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200
+       ${isMe ? 'ring-2 ring-black' : ''}`;
+    card.innerHTML = `
+      <div class="font-bold text-xl">${item.name}</div>
+      <div class="mt-1 text-lg">${item.status || '状态未知'}</div>
+      <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
+      <div class="text-xs text-neutral-600 mt-1">${timeAgo(item.updated_at)}</div>
+    `;
+    el.appendChild(card);
+  });
+}
 
-    /* =====================
-       工具函数
-    ====================== */
-    function timeAgo(ts) {
-      const diff = Math.floor((Date.now() - new Date(ts)) / 60000);
-      if (diff < 1) return '刚刚';
-      if (diff < 60) return `${diff} 分钟前`;
-      return `${Math.floor(diff / 60)} 小时前`;
+/* =====================
+   更新状态（只 UPDATE）
+===================== */
+document.getElementById('updateBtn').onclick = async () => {
+  const time = document.getElementById('timeInput').value;
+
+  await fetch(
+    `${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${MY_ID}`,
+    {
+      method: 'PATCH',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        status: currentStatus.label,
+        offwork_time: time,
+        updated_at: new Date().toISOString()
+      })
     }
+  );
 
-    function statusIcon(label) {
-      return STATUSES.find(s => s.label === label)?.icon || '❓';
-    }
+  fetchStatus();
+};
 
-    /* =====================
-       拉取 & 渲染状态
-    ====================== */
-    async function fetchStatus() {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=*`, {
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`
-        }
-      });
-      const data = await res.json();
-      render(data);
-    }
-
-    function render(list) {
-      const el = document.getElementById('statusList');
-      el.innerHTML = '';
-
-      list
-        .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
-        .forEach(item => {
-          const isMe = item.id === USER_ID;
-          const isExpired = item.offwork_time && new Date(`1970-01-01T${item.offwork_time}:00`) < new Date();
-
-          const card = document.createElement('div');
-          card.className = `rounded-2xl p-4 ${isMe ? 'ring-2 ring-black' : ''} ${isExpired ? 'opacity-40' : 'bg-gradient-to-br from-yellow-200 via-pink-200 to-purple-200'}`;
-
-          card.innerHTML = `
-            <div class="text-xl font-bold">${isMe ? '我' : 'TA'}</div>
-            <div class="mt-1 text-lg">${statusIcon(item.status)} ${item.status}</div>
-            <div class="text-sm">最早下班：${item.offwork_time || '未知'}</div>
-            <div class="text-xs text-neutral-600 mt-1">${timeAgo(item.updated_at)}</div>
-          `;
-          el.appendChild(card);
-        });
-    }
-
-    /* =====================
-       更新状态（Upsert）
-    ====================== */
-    document.getElementById('updateBtn').onclick = async () => {
-      const time = document.getElementById('timeInput').value;
-
-      await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
-        method: 'POST',
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify({
-          id: USER_ID,
-          status: currentStatus.label,
-          offwork_time: time,
-          updated_at: new Date().toISOString()
-        })
-      });
-
-      fetchStatus();
-    };
-
-    fetchStatus();
-    setInterval(fetchStatus, 60000);
-  </script>
+fetchStatus();
+setInterval(fetchStatus, 60000);
+</script>
 </body>
 </html>
