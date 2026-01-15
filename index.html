@@ -102,7 +102,7 @@ async function init() {
 /* Step 1: room_secret → room_id */
 async function fetchRoomId() {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/rooms?secret=eq.${ROOM_SECRET}&select=id`,
+    `${SUPABASE_URL}/rest/v1/couples?secret=eq.${ROOM_SECRET}&select=id`,
     authHeader()
   );
   const data = await res.json();
@@ -113,6 +113,7 @@ async function fetchRoomId() {
   return data[0].id;
 }
 
+
 /* Step 2: 选择我 / TA → member_id */
 async function chooseRoleAndBind() {
   const isMe = confirm(
@@ -121,7 +122,7 @@ async function chooseRoleAndBind() {
   MY_ROLE = isMe ? 'me' : 'ta';
 
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/members?room_id=eq.${ROOM_ID}&role=eq.${MY_ROLE}&select=id`,
+    `${SUPABASE_URL}/rest/v1/couple_members?couple_id=eq.${ROOM_ID}&role=eq.${MY_ROLE}&select=id`,
     authHeader()
   );
   const data = await res.json();
@@ -134,6 +135,7 @@ async function chooseRoleAndBind() {
   localStorage.setItem(`member_id_${ROOM_SECRET}`, MY_MEMBER_ID);
   localStorage.setItem(`member_role_${ROOM_SECRET}`, MY_ROLE);
 }
+
 
 /* =====================
    UI
